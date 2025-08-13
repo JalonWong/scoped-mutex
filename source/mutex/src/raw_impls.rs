@@ -72,7 +72,7 @@
 
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, Ordering};
-use mutex_traits::{ConstInit, ScopedRawMutex};
+use mutex_traits::{ConstInit, RawMutex, ScopedRawMutex};
 
 pub use mutex_traits as traits;
 
@@ -170,30 +170,70 @@ pub mod local {
         const INIT: Self = Self::new();
     }
 
-    unsafe impl ScopedRawMutex for LocalRawMutex {
+    unsafe impl RawMutex for LocalRawMutex {
+        type GuardMarker = *mut ();
+
         #[inline]
-        fn try_with_lock<R>(&self, f: impl FnOnce() -> R) -> Option<R> {
-            // NOTE: separated load/stores are acceptable as we are !Sync,
-            // meaning that we can only be accessed within a single thread
-            if self.taken.load(Ordering::Relaxed) {
-                return None;
+        fn lock(&self) {
+            if !self.try_lock() {
+                // In a local-only mutex, it is not possible for another holder
+                // of this mutex to release, which means we have certainly
+                // reached deadlock if the lock was already locked.
+                panic!("Deadlocked");
             }
-            self.taken.store(true, Ordering::Relaxed);
-            let ret = f();
-            self.taken.store(false, Ordering::Relaxed);
-            Some(ret)
         }
 
         #[inline]
-        fn with_lock<R>(&self, f: impl FnOnce() -> R) -> R {
-            // In a local-only mutex, it is not possible for another holder
-            // of this mutex to release, which means we have certainly
-            // reached deadlock if the lock was already locked.
-            self.try_with_lock(f).expect("Deadlocked")
+        fn try_lock(&self) -> bool {
+            #[cfg(armv6m)]
+            {
+                // NOTE: separated load/stores are acceptable as we are !Sync,
+                // meaning that we can only be accessed within a single thread
+                if self.taken.load(Ordering::Relaxed) {
+                    return false;
+                }
+                self.taken.store(true, Ordering::Relaxed);
+                return true;
+            }
+            #[cfg(not(armv6m))]
+            self.taken
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
         }
 
+        #[inline]
+        unsafe fn unlock(&self) {
+            self.taken.store(false, Ordering::Release);
+        }
+
+        #[inline]
         fn is_locked(&self) -> bool {
             self.taken.load(Ordering::Relaxed)
+        }
+    }
+
+    #[cfg(feature = "std")]
+    #[cfg(test)]
+    mod test {
+        use super::*;
+        use crate::BlockingMutex;
+
+        #[test]
+        fn local_raw_mutex() {
+            let mutex = BlockingMutex::<LocalRawMutex, u32>::new(0);
+            let mut guard = mutex.lock();
+            assert_eq!(*guard, 0);
+            *guard = 1;
+            drop(guard);
+
+            let mut guard = mutex.lock();
+            assert_eq!(*guard, 1);
+            *guard = 2;
+            drop(guard);
+
+            mutex.with_lock(|data| {
+                assert_eq!(*data, 2);
+            });
         }
     }
 }
@@ -210,7 +250,7 @@ pub mod single_core_thread_mode {
     ///
     /// # Safety
     ///
-    /// **This Mutex is only safe on single-core systems.**
+    /// **This Mutex is only safe on single-core bare-metal systems.**
     ///
     /// On multi-core systems, a `ThreadModeRawMutex` **is not sufficient** to ensure exclusive access.
     #[cfg_attr(feature = "fmt", derive(Debug))]
@@ -234,30 +274,44 @@ pub mod single_core_thread_mode {
         const INIT: Self = Self::new();
     }
 
-    unsafe impl ScopedRawMutex for ThreadModeRawMutex {
+    unsafe impl RawMutex for ThreadModeRawMutex {
+        type GuardMarker = *mut ();
+
         #[inline]
-        fn try_with_lock<R>(&self, f: impl FnOnce() -> R) -> Option<R> {
-            if !in_thread_mode() {
-                return None;
+        fn lock(&self) {
+            if !self.try_lock() {
+                // In a thread-mode only mutex, it is not possible for another holder
+                // of this mutex to release, which means we have certainly
+                // reached deadlock if the lock was already locked.
+                panic!("Deadlocked or attempted to access outside of thread mode")
             }
-            // NOTE: separated load/stores are acceptable as we checked we are only
-            // accessed from a single thread (checked above)
-            assert!(!self.taken.load(Ordering::Relaxed));
-            self.taken.store(true, Ordering::Relaxed);
-            let ret = f();
-            self.taken.store(false, Ordering::Relaxed);
-            Some(ret)
         }
 
         #[inline]
-        fn with_lock<R>(&self, f: impl FnOnce() -> R) -> R {
-            // In a thread-mode only mutex, it is not possible for another holder
-            // of this mutex to release, which means we have certainly
-            // reached deadlock if the lock was already locked.
-            self.try_with_lock(f)
-                .expect("Deadlocked or attempted to access outside of thread mode")
+        fn try_lock(&self) -> bool {
+            if !in_thread_mode() {
+                return false;
+            }
+            #[cfg(armv6m)]
+            {
+                // NOTE: separated load/stores are acceptable as we checked we are only
+                // accessed from a single thread (checked above)
+                assert!(!self.taken.load(Ordering::Relaxed));
+                self.taken.store(true, Ordering::Relaxed);
+                return true;
+            }
+            #[cfg(not(armv6m))]
+            self.taken
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
         }
 
+        #[inline]
+        unsafe fn unlock(&self) {
+            self.taken.store(false, Ordering::Release);
+        }
+
+        #[inline]
         fn is_locked(&self) -> bool {
             self.taken.load(Ordering::Relaxed)
         }
