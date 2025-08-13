@@ -3,6 +3,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
+#[cfg(feature = "compatible-with-lock_api-0_4")]
+mod impl_for_lock_api;
+
 /// Const Init Trait
 ///
 /// This trait is intended for use when implementers of [`ScopedRawMutex`] that can
@@ -82,7 +85,7 @@ pub unsafe trait ScopedRawMutex {
 /// Some mutex implementations may not be able to implement the full `RawMutex`
 /// trait, and may only be able to implement the closure-based
 /// [`ScopedRawMutex`] subset. For example, implementations for the
-/// [`critical-section`] crate (in [`mutex::raw_impls::cs`][cs]) can only
+/// `critical-section` crate (in [`mutex::raw_impls::cs`][cs]) can only
 /// implement the `ScopedRawMutex` trait. However, in general, **mutex
 /// implementations that *can* implement the more general `RawMutex` trait
 /// should prefer to do so**, as they will be able to be used in code that

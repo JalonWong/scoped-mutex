@@ -31,6 +31,9 @@ version = "0.4"
 default-features = false
 optional = true
 
+[dev-dependencies]
+parking_lot = "0.12"
+
 [features]
 default = [
     "impl-critical-section",
@@ -38,6 +41,7 @@ default = [
 impl-critical-section = ["dep:critical-section"]
 impl-unsafe-cortex-m-single-core = []
 impl-lock_api-0_4 = ["dep:lock_api-0_4"]
+compatible-with-lock_api-0_4 = ["mutex-traits/compatible-with-lock_api-0_4"]
 # Enables `fmt::Debug` and `fmt::Display` implementations.
 #
 # These can be disabled when minimizing binary size is important.

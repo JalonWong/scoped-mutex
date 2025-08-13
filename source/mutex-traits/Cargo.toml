@@ -15,8 +15,16 @@ categories = [
 documentation = "https://docs.rs/mutex-traits/"
 
 [features]
+default = ["compatible-with-lock_api-0_4"]
 std = []
+compatible-with-lock_api-0_4 = ["dep:lock_api-0_4"]
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies.lock_api-0_4]
+package = "lock_api"
+version = "0.4"
+default-features = false
+optional = true

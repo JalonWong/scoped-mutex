@@ -456,4 +456,24 @@ mod test {
         .unwrap();
         assert_eq!(Some(1), res);
     }
+
+    #[cfg(feature = "compatible-with-lock_api-0_4")]
+    #[test]
+    fn lock_api_compatibility() {
+        let mutex = BlockingMutex::<parking_lot::RawMutex, u32>::new(0);
+        let mut guard = mutex.lock();
+        assert_eq!(*guard, 0);
+        *guard = 1;
+        drop(guard);
+
+        let mut guard = mutex.lock();
+        assert_eq!(*guard, 1);
+        *guard = 2;
+        drop(guard);
+
+        mutex.with_lock(|data| {
+            assert_eq!(*data, 2);
+            *data = 3;
+        });
+    }
 }
