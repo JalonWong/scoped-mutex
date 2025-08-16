@@ -5,12 +5,16 @@
 #![cfg_attr(feature = "fmt", warn(missing_debug_implementations))]
 
 pub mod raw_impls;
+#[cfg(feature = "std")]
+mod std_wrap;
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::panic::AssertUnwindSafe;
 pub use mutex_traits::{ConstInit, RawMutex, ScopedRawMutex};
+#[cfg(feature = "std")]
+pub use std_wrap::{StdBlockingMutex, StdRawMutex};
 
 /// Blocking mutex (not async)
 ///
@@ -475,5 +479,69 @@ mod test {
             assert_eq!(*data, 2);
             *data = 3;
         });
+    }
+}
+
+#[cfg(test)]
+mod test_select_mutex {
+    //! This module is used to verify whether different mutex
+    //! types can be selected through different features.
+
+    pub use crate::*;
+    #[cfg(not(feature = "std"))]
+    pub use BlockingMutex as Mutex;
+    #[cfg(feature = "std")]
+    pub use StdBlockingMutex as Mutex;
+
+    struct MyData<R, T> {
+        mutex: Mutex<R, T>,
+    }
+
+    impl<R: RawMutex> MyData<R, u32> {
+        fn new(mutex: Mutex<R, u32>) -> Self {
+            Self { mutex }
+        }
+
+        fn use_data(&self) {
+            if let Some(mut guard) = self.mutex.try_lock() {
+                assert_eq!(*guard, 0);
+                *guard += 1;
+            }
+
+            let mut guard = self.mutex.lock();
+            assert_eq!(*guard, 1);
+            *guard += 1;
+            drop(guard);
+
+            let rst = self.mutex.try_with_lock(|data| {
+                assert_eq!(*data, 2);
+                *data += 1;
+                22
+            });
+            assert_eq!(rst, Some(22));
+
+            self.mutex.with_lock(|data| {
+                assert_eq!(*data, 3);
+                *data += 1;
+            });
+        }
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn select_mutex() {
+        use crate::StdRawMutex;
+        let mutex = Mutex::<StdRawMutex, u32>::new(0);
+        let data = MyData::new(mutex);
+        data.use_data();
+    }
+
+    #[cfg(not(feature = "std"))]
+    #[test]
+    fn select_mutex() {
+        use crate::raw_impls::local::LocalRawMutex;
+        let mutex = Mutex::<LocalRawMutex, u32>::new(0);
+        let data = MyData::new(mutex);
+        data.use_data();
     }
 }
