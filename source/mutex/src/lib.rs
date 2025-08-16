@@ -1,16 +1,20 @@
 #![doc = include_str!("../README.md")]
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "fmt", warn(missing_debug_implementations))]
 
 pub mod raw_impls;
+#[cfg(feature = "std")]
+mod std_wrap;
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::panic::AssertUnwindSafe;
 pub use mutex_traits::{ConstInit, RawMutex, ScopedRawMutex};
+#[cfg(feature = "std")]
+pub use std_wrap::{StdBlockingMutex, StdRawMutex};
 
 /// Blocking mutex (not async)
 ///
@@ -475,5 +479,52 @@ mod test {
             assert_eq!(*data, 2);
             *data = 3;
         });
+    }
+}
+
+#[cfg(test)]
+mod test_select_mutex {
+    //! This module is used to verify whether different mutex
+    //! types can be selected through different features.
+
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "std")] {
+            use crate::{StdBlockingMutex, StdRawMutex};
+            type Mutex<T> = StdBlockingMutex<StdRawMutex, T>;
+        } else {
+            use crate::{BlockingMutex, raw_impls::FakeRawMutex};
+            type Mutex<T> = BlockingMutex<FakeRawMutex, T>;
+        }
+    }
+
+    #[test]
+    fn select_mutex() {
+        let mutex = Mutex::<u32>::new(0);
+        let mut guard = mutex.lock();
+        assert_eq!(*guard, 0);
+        *guard = 1;
+        drop(guard);
+
+        let mut guard = mutex.lock();
+        assert_eq!(*guard, 1);
+        *guard = 2;
+        drop(guard);
+
+        mutex.with_lock(|data| {
+            assert_eq!(*data, 2);
+            *data = 3;
+        });
+
+        let mut guard = mutex.try_lock().unwrap();
+        assert_eq!(*guard, 3);
+        *guard = 4;
+        drop(guard);
+
+        mutex
+            .try_with_lock(|data| {
+                assert_eq!(*data, 4);
+                *data = 5;
+            })
+            .unwrap();
     }
 }

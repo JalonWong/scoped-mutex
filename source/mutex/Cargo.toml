@@ -17,6 +17,9 @@ repository.workspace = true
 all-features = true
 rustdoc-args = ["--cfg", "docsrs", "--cfg", "cortex_m"]
 
+[dependencies]
+cfg-if = "1.0"
+
 [dependencies.mutex-traits]
 version = "1.0.1"
 path = "../mutex-traits"

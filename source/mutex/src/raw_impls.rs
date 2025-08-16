@@ -72,9 +72,54 @@
 
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, Ordering};
-use mutex_traits::{ConstInit, ScopedRawMutex};
+use mutex_traits::{ConstInit, RawMutex, ScopedRawMutex};
 
 pub use mutex_traits as traits;
+
+/// A fake mutex that allows borrowing data in local context.
+///
+/// Which means it does not provide any synchronization between threads,
+pub struct FakeRawMutex {
+    /// Prevent this from being sync
+    _phantom: PhantomData<*mut ()>,
+}
+
+impl FakeRawMutex {
+    /// Create a new `FakeRawMutex`.
+    pub const fn new() -> Self {
+        Self {
+            _phantom: PhantomData,
+        }
+    }
+}
+
+unsafe impl Send for FakeRawMutex {}
+
+impl ConstInit for FakeRawMutex {
+    const INIT: Self = Self::new();
+}
+
+unsafe impl RawMutex for FakeRawMutex {
+    type GuardMarker = *mut ();
+
+    #[inline]
+    fn lock(&self) {}
+
+    #[inline]
+    fn try_lock(&self) -> bool {
+        true
+    }
+
+    #[inline]
+    unsafe fn unlock(&self) {}
+
+    #[inline]
+    fn is_locked(&self) -> bool {
+        true
+    }
+}
+
+// ================
 
 #[cfg(feature = "impl-critical-section")]
 pub mod cs {
