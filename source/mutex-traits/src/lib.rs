@@ -14,6 +14,21 @@ pub trait ConstInit {
     const INIT: Self;
 }
 
+/// Runtime Init Trait
+///
+/// This trait is intended for use when implementers of [`ScopedRawMutex`] that can
+/// be constructed in runtime.
+pub trait RuntimeInit {
+    /// Create a new instance.
+    fn runtime_new() -> Self;
+}
+
+impl<T: ConstInit> RuntimeInit for T {
+    fn runtime_new() -> Self {
+        Self::INIT
+    }
+}
+
 /// Raw scoped mutex trait.
 ///
 /// This mutex is "raw", which means it does not actually contain the protected data, it

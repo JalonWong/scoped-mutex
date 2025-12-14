@@ -10,7 +10,7 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::panic::AssertUnwindSafe;
-pub use mutex_traits::{ConstInit, RawMutex, ScopedRawMutex};
+pub use mutex_traits::{ConstInit, RawMutex, RuntimeInit, ScopedRawMutex};
 
 /// Blocking mutex (not async)
 ///
@@ -91,6 +91,19 @@ impl<R: ConstInit, T> BlockingMutex<R, T> {
     pub const fn new(val: T) -> BlockingMutex<R, T> {
         BlockingMutex {
             raw: R::INIT,
+            data: UnsafeCell::new(val),
+        }
+    }
+}
+
+impl<R: RuntimeInit, T> BlockingMutex<R, T> {
+    /// Creates a new mutex in an unlocked state ready for use.
+    /// This method can be use in runtime only, if you want to create a static one
+    /// please use [`BlockingMutex::new`]
+    #[inline]
+    pub fn runtime_new(val: T) -> BlockingMutex<R, T> {
+        BlockingMutex {
+            raw: R::runtime_new(),
             data: UnsafeCell::new(val),
         }
     }
